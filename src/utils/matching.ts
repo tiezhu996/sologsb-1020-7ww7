@@ -87,6 +87,31 @@ export function computeMatches(records: ArchiveRecord[]): MatchCandidate[] {
   return matches.sort((a, b) => b.score - a.score);
 }
 
+/**
+ * 重新计算候选，但保留核对员的操作记录：
+ * 已确认 / 已忽略 / 已合并的匹配按 (leftId, rightId) 原样带回，
+ * 新数据不会把逐字段选择和已确认匹配冲掉。
+ */
+export function recomputeMatchesPreserving(records: ArchiveRecord[], previous: MatchCandidate[]): MatchCandidate[] {
+  const fresh = computeMatches(records);
+  const reviewed = new Map<string, MatchCandidate>();
+  previous.forEach((match) => {
+    if (match.status !== 'suggested') reviewed.set(`${match.leftId}↔${match.rightId}`, match);
+  });
+  const merged = fresh.map((candidate) => {
+    const kept = reviewed.get(`${candidate.leftId}↔${candidate.rightId}`);
+    if (!kept) return candidate;
+    reviewed.delete(`${candidate.leftId}↔${candidate.rightId}`);
+    return { ...candidate, status: kept.status, reviewedAt: kept.reviewedAt };
+  });
+  // 记录可能已被合并/删除，仍保留指向现存记录的已复核结论，其余丢弃
+  const ids = new Set(records.map((record) => record.id));
+  reviewed.forEach((match) => {
+    if (ids.has(match.leftId) && ids.has(match.rightId)) merged.push(match);
+  });
+  return merged.sort((a, b) => b.score - a.score);
+}
+
 export function fieldValue(record: ArchiveRecord, field: FieldKey): string {
   return displayValue(record, field);
 }
